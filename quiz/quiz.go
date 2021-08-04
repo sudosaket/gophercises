@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
-var csvQuizFile = flag.String("csv", "problems.csv", "csv file with format 'question,answer'")
+var (
+	csvQuizFile = flag.String("csv", "problems.csv", "csv file with format 'question,answer'")
+	timeLimit   = flag.Duration("tl", 30, "time limit for the quiz in seconds")
+)
 
 type problem struct {
 	q string
@@ -20,27 +24,48 @@ func main() {
 
 	f, err := os.Open(*csvQuizFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 	defer f.Close()
 
 	reader := csv.NewReader(f)
 	lines, err := reader.ReadAll()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
 	problems := parseProblems(lines)
-	correct := 0
-	for i, p := range problems {
+	done := make(chan bool)
+	q := &quiz{
+		correct:  0,
+		problems: problems,
+		done:     done,
+	}
+	go q.start()
+	select {
+	case <-done:
+		fmt.Printf("You scored %d out of %d!\n", q.correct, len(problems))
+	case <-time.After(*timeLimit):
+		fmt.Printf("You scored %d out of %d!\n", q.correct, len(problems))
+	}
+}
+
+type quiz struct {
+	correct  int
+	problems []problem
+	done     chan bool
+}
+
+func (q *quiz) start() {
+	for i, p := range q.problems {
 		fmt.Printf("Problem #%d: %s \n", i+1, p.q)
 		var answer string
 		_, _ = fmt.Scanf("%s", &answer)
 		if p.a == answer {
-			correct++
+			q.correct++
 		}
 	}
-	fmt.Printf("You scored %d out of %d!\n", correct, len(problems))
+	q.done <- true
 }
 
 func parseProblems(lines [][]string) []problem {
